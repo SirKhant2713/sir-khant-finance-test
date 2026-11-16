@@ -517,13 +517,14 @@ table.ledger .note-in{
    No personal data baked in.
    Rename the app by changing APP_NAME here and in manifest.json. */
 var APP_NAME = 'Your Wallet';
-var APP_VERSION = '1.1.3';
+var APP_VERSION = '1.1.4';
 var STORE_KEY = 'skf_public_v1';
 /* Supabase accounts + cloud sync (v1.1.0). Project "your-wallet".
    The anon key is public by design — it goes into client code; the
    row-level security policy on wallet_data keeps each user's rows to
-   themselves. Email auth is on with email confirmation OFF, so sign-up
-   signs in immediately (no "check your email" step). */
+   themselves. Email auth is on with email confirmation ON: sign-up
+   sends a confirmation link to the user's Gmail, and sign-in works
+   only after they tap it — an unregistered email can never sign in. */
 var SUPABASE_URL = 'https://onqbqtpswqgzgbuqpqrn.supabase.co';
 var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ucWJxdHBzd3FnemdidXFwcXJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ3NjM2MjcsImV4cCI6MjExMDMzOTYyN30.y4Bq80eH3rMA18n5E_QkbERsHrFQwZ4eZ15sK4JXNqw';
 /* OAuth providers are gated: a button renders ONLY when its flag is
@@ -638,7 +639,10 @@ var I18N = {
     authShortPw:'စကားဝှက်က အနည်းဆုံး 6 လုံး ရှိရမယ်',
     authNetwork:'အင်တာနက် ချိတ်ဆက်၍ မရပါ',
     authFailed:'ဝင်လို့ မရပါ — နောက်မှ ထပ်စမ်းပါ',
-    authCreated:'အကောင့် ဖွင့်ပြီးပါပြီ — ဝင်လိုက်ပါ',
+    authCreated:'အကောင့် ဖွင့်ပြီးပါပြီ — Gmail ထဲက လင့်ခ်ကို နှိပ်ပြီး အတည်ပြုပါ',
+    authNotConfirmed:'Gmail ထဲက အတည်ပြုလင့်ခ်ကို အရင် နှိပ်ပါ',
+    authBadEmail:'အီးမေးလ် မမှန်ပါ — Gmail အစစ် သုံးပါ',
+    authRateLimit:'အီးမေးလ် ပို့တာ များသွားလို့ ခဏစောင့်ပြီး ထပ်စမ်းပါ',
     authRestored:'အရင်က မှတ်တမ်းတွေ ပြန်ရပါပြီ',
     authSyncFail:'cloud ကနေ ပြန်ယူ၍ မရပါ — ဖုန်းထဲက မှတ်တမ်းကိုပဲ သုံးပါမယ်',
     saveDay:'သိမ်းမယ်', enterAmount:'ငွေပမာဏ ထည့်ပါ', deleted:'ဖျက်ပြီးပါပြီ', amountPh:'ငွေပမာဏ', creditBy:'Developed by Min Khant',
@@ -699,7 +703,10 @@ var I18N = {
     authShortPw:'Password must be at least 6 characters',
     authNetwork:'Could not reach the internet',
     authFailed:'Could not sign in — try again later',
-    authCreated:'Account created — sign in',
+    authCreated:'Account created — tap the link in your Gmail to confirm',
+    authNotConfirmed:'Tap the confirmation link in your Gmail first',
+    authBadEmail:'That email is not valid — use a real Gmail address',
+    authRateLimit:'Too many emails sent — wait a moment and try again',
     authRestored:'Your previous records are back',
     authSyncFail:'Could not restore from the cloud — using the records on this phone',
     saveDay:'Save', enterAmount:'Enter an amount', deleted:'Deleted', amountPh:'Amount', creditBy:'Developed by Min Khant',
@@ -1187,6 +1194,11 @@ function authErrorKey(e){
   var m = String((e && e.code) || (e && e.message) || '').toLowerCase();
   if (m.indexOf('invalid login') !== -1 || m.indexOf('invalid_grant') !== -1 ||
       m.indexOf('invalid email') !== -1) return 'authWrong';
+  if (m.indexOf('email not confirmed') !== -1 ||
+      m.indexOf('email_not_confirmed') !== -1) return 'authNotConfirmed';
+  if (m.indexOf('is invalid') !== -1 ||
+      m.indexOf('email_address_invalid') !== -1) return 'authBadEmail';
+  if (m.indexOf('rate limit') !== -1 || m.indexOf('too many') !== -1) return 'authRateLimit';
   if (m.indexOf('already registered') !== -1 || m.indexOf('already exists') !== -1 ||
       m.indexOf('user already') !== -1) return 'authExists';
   if (m.indexOf('password') !== -1 && m.indexOf('short') !== -1) return 'authShortPw';
@@ -1207,8 +1219,8 @@ function signUpEmail(email, password){
   return authRequest('/auth/v1/signup', { email: email, password: password })
     .then(function(r){
       if (!r.ok) throw authError(r);
-      /* Email confirmation on: signup returns a user but no session yet.
-         The caller shows "account created — sign in" instead of failing. */
+      /* Email confirmation is ON: signup returns a user but no session
+         yet. The caller tells the user to check Gmail instead of failing. */
       if (r.body.access_token){
         session = sessionFromAuth(r.body);
         saveSession();
@@ -1748,30 +1760,11 @@ function doEmailAuth(){
   if (loginMode === 'signup'){
     p = signUpEmail(email, password);
   } else {
-    /* Sign-in: if the credentials fail, the account may simply not
-       exist yet — Supabase does not say which. Try creating it with
-       the same details; if it already exists, the password was wrong. */
-    p = signInEmail(email, password).catch(function(e){
-      if (authErrorKey(e) !== 'authWrong') throw e;
-      return signUpEmail(email, password).then(function(r){
-        if (r && r.session) return r.session;
-        /* Created but confirmation pending — handled below. */
-        return { createdNoSession: true };
-      }).catch(function(e2){
-        /* The account exists after all: the password was wrong. */
-        if (authErrorKey(e2) === 'authExists') throw e;
-        throw e2;
-      });
-    });
+    /* Sign-in only: an unregistered email must fail, like a normal
+       account — signing in never creates an account on its own. */
+    p = signInEmail(email, password);
   }
   p.then(function(r){
-    if (r && r.createdNoSession){
-      loginMode = 'signin';
-      loginBusy = false;
-      showToast(t('authCreated'));
-      render();
-      return;
-    }
     if (loginMode === 'signup' && r && !r.session){
       /* Email confirmation pending: no session yet. Switch to sign-in
          and let the user sign in once confirmed. */
