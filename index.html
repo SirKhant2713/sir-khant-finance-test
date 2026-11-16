@@ -517,7 +517,7 @@ table.ledger .note-in{
    No personal data baked in.
    Rename the app by changing APP_NAME here and in manifest.json. */
 var APP_NAME = 'Your Wallet';
-var APP_VERSION = '1.1.2';
+var APP_VERSION = '1.1.3';
 var STORE_KEY = 'skf_public_v1';
 /* Supabase accounts + cloud sync (v1.1.0). Project "your-wallet".
    The anon key is public by design — it goes into client code; the
@@ -626,8 +626,8 @@ var I18N = {
     signedInAs:'ဝင်ထားသော အကောင့်', guestMode:'အကောင့်မသုံးပဲ သုံးနေပါတယ်',
     authSignIn:'အကောင့်ဝင်မယ်', authCreate:'အကောင့်ဖွင့်မယ်',
     authSub:'အကောင့်နဲ့ဝင်ရင် မှတ်တမ်းတွေ cloud မှာ သိမ်းထားပေးမယ်',
-    authEmail:'အီးမေးလ်', authEmailPh:'you@example.com',
-    authPassword:'စကားဝှက်', authPasswordPh:'••••••••',
+    authEmail:'အီးမေးလ်', authEmailPh:'ENTER your email',
+    authPassword:'စကားဝှက်', authPasswordPh:'Password',
     authSignInBtn:'ဝင်မယ်', authCreateBtn:'အကောင့်ဖွင့်မယ်',
     authHaveAccount:'အကောင့် ရှိပြီးသားလား? ဝင်မယ်', authNoAccount:'အကောင့် မရှိသေးဘူးလား? ဖွင့်မယ်',
     authOr:'သို့မဟုတ်', authGoogle:'Google နဲ့ ဆက်သွယ်မယ်', authFacebook:'Facebook နဲ့ ဆက်သွယ်မယ်',
@@ -687,8 +687,8 @@ var I18N = {
     signedInAs:'Signed in as', guestMode:'Using without an account',
     authSignIn:'Sign in', authCreate:'Create account',
     authSub:'With an account, your records stay safe in the cloud',
-    authEmail:'Email', authEmailPh:'you@example.com',
-    authPassword:'Password', authPasswordPh:'••••••••',
+    authEmail:'Email', authEmailPh:'ENTER your email',
+    authPassword:'Password', authPasswordPh:'Password',
     authSignInBtn:'Sign in', authCreateBtn:'Create account',
     authHaveAccount:'Already have an account? Sign in', authNoAccount:'No account yet? Create one',
     authOr:'or', authGoogle:'Continue with Google', authFacebook:'Continue with Facebook',
@@ -1744,8 +1744,34 @@ function doEmailAuth(){
   if (!email || email.indexOf('@') === -1 || !password){ showToast(t('authNeedBoth')); return; }
   loginBusy = true;
   render();
-  var p = loginMode === 'signup' ? signUpEmail(email, password) : signInEmail(email, password);
+  var p;
+  if (loginMode === 'signup'){
+    p = signUpEmail(email, password);
+  } else {
+    /* Sign-in: if the credentials fail, the account may simply not
+       exist yet — Supabase does not say which. Try creating it with
+       the same details; if it already exists, the password was wrong. */
+    p = signInEmail(email, password).catch(function(e){
+      if (authErrorKey(e) !== 'authWrong') throw e;
+      return signUpEmail(email, password).then(function(r){
+        if (r && r.session) return r.session;
+        /* Created but confirmation pending — handled below. */
+        return { createdNoSession: true };
+      }).catch(function(e2){
+        /* The account exists after all: the password was wrong. */
+        if (authErrorKey(e2) === 'authExists') throw e;
+        throw e2;
+      });
+    });
+  }
   p.then(function(r){
+    if (r && r.createdNoSession){
+      loginMode = 'signin';
+      loginBusy = false;
+      showToast(t('authCreated'));
+      render();
+      return;
+    }
     if (loginMode === 'signup' && r && !r.session){
       /* Email confirmation pending: no session yet. Switch to sign-in
          and let the user sign in once confirmed. */
