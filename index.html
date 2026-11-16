@@ -266,6 +266,17 @@ header.top{display:flex; align-items:center; justify-content:space-between; gap:
 .suggest .none{padding:11px 13px; font-size:14px; color:var(--ink-soft);}
 .chips{display:flex; gap:8px; overflow-x:auto; padding:2px 2px 12px; scrollbar-width:none;}
 .chips::-webkit-scrollbar{display:none;}
+/* PC: the chips row has no visible scrollbar and no touch swipe, so a
+   mouse user could never reach the last categories. On a fine-pointer
+   device show a thin gold scrollbar and a grab cursor; the row is also
+   mouse-draggable (see initChipDrag). Touch keeps the hidden bar. */
+@media (hover:hover) and (pointer:fine){
+  .chips{scrollbar-width:thin; scrollbar-color:rgba(176,141,62,.55) transparent; cursor:grab;}
+  .chips::-webkit-scrollbar{display:block; height:6px;}
+  .chips::-webkit-scrollbar-thumb{background:rgba(176,141,62,.55); border-radius:3px;}
+  .chips::-webkit-scrollbar-track{background:transparent;}
+  .chips.dragging{cursor:grabbing;}
+}
 .chip{
   display:inline-flex; align-items:center; gap:7px; flex-shrink:0;
   border:1px solid var(--glass-border-strong); background:var(--glass-bg); color:var(--ink);
@@ -517,7 +528,7 @@ table.ledger .note-in{
    No personal data baked in.
    Rename the app by changing APP_NAME here and in manifest.json. */
 var APP_NAME = 'Your Wallet';
-var APP_VERSION = '1.1.4';
+var APP_VERSION = '1.1.5';
 var STORE_KEY = 'skf_public_v1';
 /* Supabase accounts + cloud sync (v1.1.0). Project "your-wallet".
    The anon key is public by design — it goes into client code; the
@@ -2041,6 +2052,43 @@ function settingsViewHTML(){
 }
 
 /* ---------------- render + navigation ---------------- */
+/* PC drag-to-scroll for the category chips (v1.1.5): on a desktop there
+   is no touch swipe and the scrollbar is hidden, so the last categories
+   (phone, other) were unreachable — after transport/cigarettes the row
+   just stopped. Mouse-drag scrolls it; a real drag swallows the click
+   that would otherwise fire on release, so dragging never opens a draft. */
+var chipDrag = { on: false, moved: false, x: 0, left: 0 };
+function initChipDrag(){
+  var cr = el('chipRow');
+  if (!cr || !cr.addEventListener || cr._dragWired) return;
+  cr._dragWired = true;
+  cr.addEventListener('pointerdown', function(e){
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    chipDrag.on = true; chipDrag.moved = false;
+    chipDrag.x = e.clientX; chipDrag.left = cr.scrollLeft;
+    if (cr.setPointerCapture){ try { cr.setPointerCapture(e.pointerId); } catch (err) {} }
+  });
+  cr.addEventListener('pointermove', function(e){
+    if (!chipDrag.on) return;
+    var dx = e.clientX - chipDrag.x;
+    if (!chipDrag.moved && Math.abs(dx) > 6){
+      chipDrag.moved = true;
+      if (cr.classList) cr.classList.add('dragging');
+    }
+    if (chipDrag.moved) cr.scrollLeft = chipDrag.left - dx;
+  });
+  function chipDragEnd(){
+    if (!chipDrag.on) return;
+    chipDrag.on = false;
+    if (cr.classList) cr.classList.remove('dragging');
+  }
+  cr.addEventListener('pointerup', chipDragEnd);
+  cr.addEventListener('pointercancel', chipDragEnd);
+  cr.addEventListener('pointerleave', chipDragEnd);
+  cr.addEventListener('click', function(e){
+    if (chipDrag.moved){ chipDrag.moved = false; e.stopPropagation(); e.preventDefault(); }
+  }, true);
+}
 function render(){
   applyTheme();
   var root = el('app');
@@ -2094,6 +2142,7 @@ function render(){
   positionTabGlide(oldGlideLeft);
   var cr1 = el('chipRow');
   if (cr1 && typeof cr1.scrollLeft === 'number') cr1.scrollLeft = chipScroll;
+  initChipDrag();
   if (editingName){
     var ni = el('nameInput');
     if (ni && ni.focus){ ni.focus(); if (ni.select) ni.select(); }
