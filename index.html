@@ -90,6 +90,19 @@ input, textarea{ -webkit-user-select:text; user-select:text; }
 @keyframes drift2{from{transform:translate(0,0) scale(1.1);} to{transform:translate(80px,-50px) scale(.95);}}
 @keyframes drift3{from{transform:translate(0,0) scale(1);} to{transform:translate(-60px,-70px) scale(1.2);}}
 @keyframes drift4{from{transform:translate(0,0) scale(1);} to{transform:translate(70px,-60px) scale(1.1);}}
+/* ---------- Lite mode (v1.1.7): automatic performance fallback ----------
+   Weak phones get the 'lite' class on <body>. The glass blur + animated
+   aurora are the expensive parts — killing them makes the app smooth on
+   cheap hardware. Layout, colours and one-shot animations stay the same,
+   so lite still looks like Your Wallet. */
+body.lite .aurora{display:none;}
+body.lite *{-webkit-backdrop-filter:none !important; backdrop-filter:none !important;}
+body.lite .balance::after, body.lite .balance-cover::after{animation:none;}
+body.lite .splash-glow{animation:none;}
+body.lite .tour-ring{animation:none;}
+/* Floating glass sat on blurred content; without the blur it needs a
+   solid back, or scrolling text shows through it. */
+body.lite .tabbar, body.lite .tour-tip, body.lite .modal-card{background:var(--card);}
 #app{max-width:560px; margin:0 auto; padding:14px 16px 110px;}
 @keyframes viewEnter{from{opacity:.3; transform:translateY(8px);} to{opacity:1; transform:translateY(0);}}
 .view-enter{animation:viewEnter .35s ease both;}
@@ -528,7 +541,7 @@ table.ledger .note-in{
    No personal data baked in.
    Rename the app by changing APP_NAME here and in manifest.json. */
 var APP_NAME = 'Your Wallet';
-var APP_VERSION = '1.1.6';
+var APP_VERSION = '1.1.7';
 var STORE_KEY = 'skf_public_v1';
 /* Supabase accounts + cloud sync (v1.1.0). Project "your-wallet".
    The anon key is public by design — it goes into client code; the
@@ -629,6 +642,8 @@ var I18N = {
     noMatch:'မတွေ့ပါ', home:'ပင်မ', day:'နေ့စဉ်', settings:'ဆက်တင်',
     theme:'အရောင်', lang:'ဘာသာစကား', dark:'အမှောင်', light:'အလင်း',
     myanmar:'မြန်မာ', english:'English',
+    liteMode:'Lite mode', liteAuto:'အလိုအလျောက်', liteOn:'ဖွင့်ထားတယ်', liteOff:'ပိတ်ထားတယ်',
+    liteHint:'ဖုန်းလေးနေရင် အလိုအလျောက် ပေါ့အောင် လုပ်ပေးမယ်',
     setupTitle:'စတင်အသုံးပြုမယ်', setupSub:'ကိုယ့်ငွေစာရင်း ကိုယ်တိုင် စီမံမယ်',
     startBalance:'လက်ရှိ သင့်လက်ထဲ ကျန်ငွေ', paydayDay:'လစာထုတ်ရက် (လထဲက ရက်စွဲ)',
     dailyTarget:'တနေ့ သုံးမယ့် ပမာဏ', suggestTarget:'အကြံပြုချက်',
@@ -693,6 +708,8 @@ var I18N = {
     noMatch:'Not found', home:'Home', day:'Day', settings:'Settings',
     theme:'Theme', lang:'Language', dark:'Dark', light:'Light',
     myanmar:'Myanmar', english:'English',
+    liteMode:'Lite mode', liteAuto:'Auto', liteOn:'On', liteOff:'Off',
+    liteHint:'Automatically lightens the app on slower phones',
     setupTitle:'Get started', setupSub:'Your money, your records',
     startBalance:'Money in hand right now', paydayDay:'Payday (day of month)',
     dailyTarget:'Daily spending target', suggestTarget:'Suggested',
@@ -894,7 +911,7 @@ function defaultState(){
   return {
     setup: { done:false, balance:0, paydayDay:1, dailyTarget:0 },
     days: {},
-    settings: { theme:'light', lang:'my', tourDone:false, guest:false },
+    settings: { theme:'light', lang:'my', tourDone:false, guest:false, lite:'auto' },
     profile: { name:'', photo:'' },
     lastSyncedAt: null
   };
@@ -921,6 +938,7 @@ function loadState(){
       if (s.settings.lang === 'my' || s.settings.lang === 'en') state.settings.lang = s.settings.lang;
       if (s.settings.tourDone === true) state.settings.tourDone = true;
       if (s.settings.guest === true) state.settings.guest = true;
+      if (s.settings.lite === 'auto' || s.settings.lite === 'on' || s.settings.lite === 'off') state.settings.lite = s.settings.lite;
     }
     if (typeof s.lastSyncedAt === 'string') state.lastSyncedAt = s.lastSyncedAt;
     if (s.profile && typeof s.profile === 'object'){
@@ -943,6 +961,69 @@ function scheduleUpload(){
 function persist(skipSync){
   try { storage.set(STORE_KEY, JSON.stringify(state)); } catch (e) {}
   if (!skipSync) scheduleUpload();
+}
+/* ---------------- Lite mode (v1.1.7): automatic performance fallback ----
+   The glass blur + animated aurora lag badly on cheap phones, so weak
+   hardware gets a simplified render automatically. settings.lite:
+   'auto' (default — detect), 'on' (always lite), 'off' (never lite).
+   Detection never throws: every API read is guarded, so a missing
+   navigator or rAF just means "not low-end, no sampling". */
+var fpsLite = false;
+var fpsSampled = false;
+function isLowEndDevice(){
+  try {
+    if (typeof navigator === 'undefined' || !navigator) return false;
+    if (typeof navigator.deviceMemory === 'number' && navigator.deviceMemory <= 2) return true;
+    if (typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4) return true;
+  } catch (e) {}
+  return false;
+}
+function liteActive(){
+  var mode = (state.settings && state.settings.lite) || 'auto';
+  if (mode === 'on') return true;
+  if (mode === 'off') return false;
+  return fpsLite || isLowEndDevice();
+}
+function applyLiteMode(){
+  if (typeof document === 'undefined' || !document.body || !document.body.classList) return;
+  if (liteActive()) document.body.classList.add('lite');
+  else document.body.classList.remove('lite');
+}
+/* One-shot frame-rate sample, auto mode only: ~90 frames or 2s, whichever
+   comes first. Under 30fps the phone cannot carry the glass, so lite
+   switches on for the rest of the session. No rAF (tests, old WebViews)
+   means no sampling — the deviceMemory / cores check still applies. */
+function sampleFps(){
+  if (fpsSampled) return;
+  fpsSampled = true;
+  var mode = (state.settings && state.settings.lite) || 'auto';
+  if (mode !== 'auto') return;
+  if (typeof requestAnimationFrame === 'undefined') return;
+  try {
+    var frames = 0;
+    var start = -1;
+    var raf = requestAnimationFrame;
+    function tickFrame(ts){
+      if (start < 0) start = ts;
+      frames++;
+      var elapsed = ts - start;
+      if (frames >= 90 || elapsed >= 2000){
+        var secs = elapsed / 1000;
+        if (secs > 0 && (frames / secs) < 30){
+          fpsLite = true;
+          applyLiteMode();
+        }
+        return;
+      }
+      raf(tickFrame);
+    }
+    raf(tickFrame);
+  } catch (e) {}
+}
+/* I18N key for the current Lite mode value, shown on the Settings button. */
+function liteLabelKey(){
+  var mode = (state.settings && state.settings.lite) || 'auto';
+  return mode === 'on' ? 'liteOn' : mode === 'off' ? 'liteOff' : 'liteAuto';
 }
 function blankDay(){ return { entries:[], income:[] }; }
 function getDay(iso){
@@ -1130,6 +1211,7 @@ function importState(text){
     if (s.settings.lang === 'my' || s.settings.lang === 'en') next.settings.lang = s.settings.lang;
     if (s.settings.tourDone === true) next.settings.tourDone = true;
     if (s.settings.guest === true) next.settings.guest = true;
+    if (s.settings.lite === 'auto' || s.settings.lite === 'on' || s.settings.lite === 'off') next.settings.lite = s.settings.lite;
   }
   if (typeof s.lastSyncedAt === 'string') next.lastSyncedAt = s.lastSyncedAt;
   if (s.profile && typeof s.profile === 'object'){
@@ -2037,6 +2119,9 @@ function settingsViewHTML(){
         '<div class="rowbtns"><button type="button" class="btn primary" data-action="go-login">' + esc(t('signIn')) + '</button></div></div>';
     }
   }
+  h += '<div class="setrow"><h3>' + esc(t('liteMode')) + '</h3>' +
+    '<div class="hint">' + esc(t('liteHint')) + '</div>' +
+    '<div class="rowbtns"><button type="button" class="btn" data-action="cycle-lite">' + esc(t(liteLabelKey())) + '</button></div></div>';
   h += '<div class="setrow"><h3>' + esc(t('editSetup')) + '</h3>' +
     '<div class="field"><label>' + esc(t('startBalance')) + ' (' + esc(t('kyat')) + ')</label>' +
     '<input id="editBal" type="number" inputmode="numeric" min="0" value="' + (state.setup.balance || '') + '"></div>' +
@@ -2530,6 +2615,15 @@ function handleClick(e){
       render();
       break;
     }
+    case 'cycle-lite': {
+      if (!state.settings) state.settings = {};
+      var cur = state.settings.lite || 'auto';
+      state.settings.lite = cur === 'auto' ? 'on' : cur === 'on' ? 'off' : 'auto';
+      persist();
+      applyLiteMode();
+      render();
+      break;
+    }
     case 'reset-data': {
       if (!resetArmed){
         resetArmed = true;
@@ -2763,6 +2857,10 @@ function init(){
   }
   setHash(view.name === 'login' ? '#login' : view.name === 'settings' ? '#settings' : view.name === 'home' ? '#home' : '#day=' + view.iso, false);
   render();
+  /* Lite mode: apply the saved / detected mode, then sample the frame
+     rate once (auto mode only) so a slow phone simplifies itself. */
+  applyLiteMode();
+  sampleFps();
   if (oauthReturn){
     handleOAuthReturn();
   } else if (session){
@@ -2840,6 +2938,10 @@ if (typeof module !== 'undefined' && module.exports){
     profileName: profileName, profilePhoto: profilePhoto,
     get draft(){ return draft; },
     isJunk: isJunk, purgeJunk: purgeJunk,
+    /* Lite mode (v1.1.7) */
+    isLowEndDevice: isLowEndDevice, liteActive: liteActive,
+    applyLiteMode: applyLiteMode, sampleFps: sampleFps, liteLabelKey: liteLabelKey,
+    get fpsLite(){ return fpsLite; }, setFpsLite: function(v){ fpsLite = v; },
     get editingName(){ return editingName; },
     get tourStep(){ return tourStep; },
     setTourStep: function(s){ tourStep = s; },
