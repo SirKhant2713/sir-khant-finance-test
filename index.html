@@ -541,7 +541,7 @@ table.ledger .note-in{
    No personal data baked in.
    Rename the app by changing APP_NAME here and in manifest.json. */
 var APP_NAME = 'Your Wallet';
-var APP_VERSION = '1.1.7';
+var APP_VERSION = '1.1.8';
 var STORE_KEY = 'skf_public_v1';
 /* Supabase accounts + cloud sync (v1.1.0). Project "your-wallet".
    The anon key is public by design — it goes into client code; the
@@ -989,10 +989,37 @@ function applyLiteMode(){
   if (liteActive()) document.body.classList.add('lite');
   else document.body.classList.remove('lite');
 }
+/* Refresh-rate-aware FPS threshold (v1.1.8): a 120Hz phone renders
+   twice as many frames as a 60Hz one, so "slow" is relative — lite
+   only when the phone delivers under HALF its display's refresh rate
+   (60Hz -> 30fps, 90Hz -> 45fps, 120Hz -> 60fps). The refresh rate is
+   estimated from the rAF cadence: median frame interval, snapped to
+   60/90/120/144, floored at 60 (a slow median means jank, not a 30Hz
+   display). Unknown refresh falls back to the fixed 30fps line. */
+function refreshRateFromIntervals(intervals){
+  if (!Array.isArray(intervals) || intervals.length < 3) return 0;
+  var sorted = intervals.slice().sort(function(a, b){ return a - b; });
+  var mid = Math.floor(sorted.length / 2);
+  var median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  if (!(median > 0)) return 0;
+  var est = 1000 / median;
+  if (est < 60) est = 60;
+  var rates = [60, 90, 120, 144];
+  var best = rates[0];
+  for (var i = 1; i < rates.length; i++){
+    if (Math.abs(est - rates[i]) < Math.abs(est - best)) best = rates[i];
+  }
+  return best;
+}
+function fpsNeedsLite(avgFps, refreshRate){
+  var threshold = refreshRate > 0 ? refreshRate / 2 : 30;
+  return avgFps < threshold;
+}
 /* One-shot frame-rate sample, auto mode only: ~90 frames or 2s, whichever
-   comes first. Under 30fps the phone cannot carry the glass, so lite
-   switches on for the rest of the session. No rAF (tests, old WebViews)
-   means no sampling — the deviceMemory / cores check still applies. */
+   comes first. Under half the display's refresh rate the phone cannot
+   carry the glass, so lite switches on for the rest of the session.
+   No rAF (tests, old WebViews) means no sampling — the deviceMemory /
+   cores check still applies. */
 function sampleFps(){
   if (fpsSampled) return;
   fpsSampled = true;
@@ -1002,14 +1029,18 @@ function sampleFps(){
   try {
     var frames = 0;
     var start = -1;
+    var last = -1;
+    var intervals = [];
     var raf = requestAnimationFrame;
     function tickFrame(ts){
       if (start < 0) start = ts;
+      if (last >= 0) intervals.push(ts - last);
+      last = ts;
       frames++;
       var elapsed = ts - start;
       if (frames >= 90 || elapsed >= 2000){
         var secs = elapsed / 1000;
-        if (secs > 0 && (frames / secs) < 30){
+        if (secs > 0 && fpsNeedsLite(frames / secs, refreshRateFromIntervals(intervals))){
           fpsLite = true;
           applyLiteMode();
         }
@@ -2938,9 +2969,10 @@ if (typeof module !== 'undefined' && module.exports){
     profileName: profileName, profilePhoto: profilePhoto,
     get draft(){ return draft; },
     isJunk: isJunk, purgeJunk: purgeJunk,
-    /* Lite mode (v1.1.7) */
+    /* Lite mode (v1.1.7; refresh-aware threshold v1.1.8) */
     isLowEndDevice: isLowEndDevice, liteActive: liteActive,
     applyLiteMode: applyLiteMode, sampleFps: sampleFps, liteLabelKey: liteLabelKey,
+    refreshRateFromIntervals: refreshRateFromIntervals, fpsNeedsLite: fpsNeedsLite,
     get fpsLite(){ return fpsLite; }, setFpsLite: function(v){ fpsLite = v; },
     get editingName(){ return editingName; },
     get tourStep(){ return tourStep; },
