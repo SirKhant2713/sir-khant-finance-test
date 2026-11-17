@@ -1,9 +1,10 @@
 /* Your Wallet (public) — offline service worker, cache-first.
    Bump CACHE when shipping a new version of the site. */
-var CACHE = 'your-wallet-v1.1.9';
+var CACHE = 'your-wallet-v1.1.11';
 var ASSETS = [
   './',
   './index.html',
+  './groq-key.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
