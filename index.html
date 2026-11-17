@@ -40,8 +40,8 @@
   --glass-border:rgba(255,255,255,.65);
   --glass-border-strong:rgba(30,58,95,.30);
   --glass-hi:rgba(255,255,255,.8);
-  --glass-shadow:0 10px 32px rgba(26,34,51,.14), inset 0 2px 1px rgba(255,255,255,.8), inset 0 -1px 1px rgba(255,255,255,.3), inset 1px 0 1px rgba(255,255,255,.3), inset -1px 0 1px rgba(255,255,255,.3);
-  --card-glass:linear-gradient(135deg, rgba(255,253,246,.74), rgba(255,253,246,.62));
+  --glass-shadow:0 10px 32px rgba(26,34,51,.14), inset 0 1px 0 rgba(255,255,255,.65), inset 0 2px 1px rgba(255,255,255,.8), inset 0 -1px 1px rgba(255,255,255,.3), inset 1px 0 1px rgba(255,255,255,.3), inset -1px 0 1px rgba(255,255,255,.3);
+  --card-glass:linear-gradient(135deg, rgba(255,253,246,.68), rgba(255,253,246,.56));
 }
 [data-theme="dark"]{
   --paper:#0e1622; --card:#16233a; --ink:#ece8dc; --ink-soft:#a8b0c2;
@@ -78,10 +78,10 @@ input, textarea{ -webkit-user-select:text; user-select:text; }
 .aurora i{position:absolute; border-radius:50%; will-change:transform;}
 /* Blobs live at the corners, not mid-screen: colour behind form fields
    and body text reads as stains, not ambience. */
-.aurora .b1{width:600px; height:480px; right:-140px; top:-200px; background:radial-gradient(circle, rgba(212,175,106,.45), transparent 70%); animation:drift1 26s ease-in-out infinite alternate;}
-.aurora .b2{width:680px; height:520px; left:-180px; top:-30%; background:radial-gradient(circle, rgba(44,82,130,.3), transparent 70%); animation:drift2 32s ease-in-out infinite alternate;}
-.aurora .b3{width:560px; height:440px; right:-120px; top:70%; background:radial-gradient(circle, rgba(217,165,92,.45), transparent 70%); animation:drift3 24s ease-in-out infinite alternate;}
-.aurora .b4{width:660px; height:500px; left:-160px; bottom:-140px; background:radial-gradient(circle, rgba(44,82,130,.4), transparent 70%); animation:drift4 30s ease-in-out infinite alternate;}
+.aurora .b1{width:600px; height:480px; right:-140px; top:-200px; background:radial-gradient(circle, rgba(212,175,106,.6), transparent 70%); animation:drift1 26s ease-in-out infinite alternate;}
+.aurora .b2{width:680px; height:520px; left:-180px; top:-30%; background:radial-gradient(circle, rgba(44,82,130,.45), transparent 70%); animation:drift2 32s ease-in-out infinite alternate;}
+.aurora .b3{width:560px; height:440px; right:-120px; top:70%; background:radial-gradient(circle, rgba(217,165,92,.6), transparent 70%); animation:drift3 24s ease-in-out infinite alternate;}
+.aurora .b4{width:660px; height:500px; left:-160px; bottom:-140px; background:radial-gradient(circle, rgba(44,82,130,.5), transparent 70%); animation:drift4 30s ease-in-out infinite alternate;}
 [data-theme="dark"] .aurora .b1{background:radial-gradient(circle, rgba(212,175,106,.35), transparent 70%);}
 [data-theme="dark"] .aurora .b2{background:radial-gradient(circle, rgba(80,130,190,.5), transparent 70%);}
 [data-theme="dark"] .aurora .b3{background:radial-gradient(circle, rgba(217,165,92,.28), transparent 70%);}
@@ -446,6 +446,14 @@ table.ledger .note-in{
 .setrow h3{margin:0 0 10px; font-size:15px; color:var(--green-ink);}
 .seg{display:flex; gap:8px;}
 .seg .btn.on{background:var(--green); border-color:var(--green); color:#f7f3ea; font-weight:700;}
+/* Segmented Lite control: one frosted-glass track, three tappable
+   segments (On | Auto | Off). The active segment mirrors the tab glide:
+   gold glass in light mode, frosted pill with a gold rim in dark. */
+.liteseg{display:flex; background:var(--glass-bg); border:1px solid var(--glass-border); border-radius:12px; padding:3px; gap:3px; margin-top:10px; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);}
+.liteseg .segbtn{flex:1; border:1px solid transparent; background:transparent; color:var(--ink-soft); font-family:inherit; font-size:13.5px; font-weight:600; line-height:1.3; padding:8px 2px; border-radius:9px; cursor:pointer; white-space:nowrap; transition:background-color .2s ease, color .2s ease;}
+.liteseg .segbtn:active{transform:scale(.95);}
+.liteseg .segbtn.on{background:linear-gradient(135deg, rgba(212,175,106,.38), rgba(176,141,62,.24)); border-color:rgba(255,255,255,.45); box-shadow:inset 0 1px 0 rgba(255,255,255,.55); color:var(--ink); font-weight:700;}
+[data-theme="dark"] .liteseg .segbtn.on{background:linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.06)); border-color:rgba(212,175,106,.5); box-shadow:inset 0 1px 0 rgba(255,255,255,.22);}
 .setrow .rowbtns{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
 .foot{text-align:center; color:var(--ink-soft); font-size:12.5px; margin-top:18px;}
 .toast{
@@ -541,7 +549,7 @@ table.ledger .note-in{
    No personal data baked in.
    Rename the app by changing APP_NAME here and in manifest.json. */
 var APP_NAME = 'Your Wallet';
-var APP_VERSION = '1.1.8';
+var APP_VERSION = '1.1.9';
 var STORE_KEY = 'skf_public_v1';
 /* Supabase accounts + cloud sync (v1.1.0). Project "your-wallet".
    The anon key is public by design — it goes into client code; the
@@ -1050,11 +1058,6 @@ function sampleFps(){
     }
     raf(tickFrame);
   } catch (e) {}
-}
-/* I18N key for the current Lite mode value, shown on the Settings button. */
-function liteLabelKey(){
-  var mode = (state.settings && state.settings.lite) || 'auto';
-  return mode === 'on' ? 'liteOn' : mode === 'off' ? 'liteOff' : 'liteAuto';
 }
 function blankDay(){ return { entries:[], income:[] }; }
 function getDay(iso){
@@ -1691,10 +1694,11 @@ function toggleBalance(){
    Set by the arrow handlers, consumed by render() + dayViewHTML. */
 var slideDir = null;
 /* A light tactile tick on primary taps (Android only; no-op elsewhere).
-   8ms is a tap, not a buzz. */
+   1ms is the weakest pulse the Vibration API allows — just enough to
+   feel, never a buzz. (v1.1.9: was 8ms; the user felt every tap buzz.) */
 function tick(){
   try {
-    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(8);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(1);
   } catch (e) {}
 }
 /* Animated count-up for dashboard numbers (no-op without a real DOM). */
@@ -2150,9 +2154,14 @@ function settingsViewHTML(){
         '<div class="rowbtns"><button type="button" class="btn primary" data-action="go-login">' + esc(t('signIn')) + '</button></div></div>';
     }
   }
+  var lm = (state.settings && state.settings.lite) || 'auto';
   h += '<div class="setrow"><h3>' + esc(t('liteMode')) + '</h3>' +
     '<div class="hint">' + esc(t('liteHint')) + '</div>' +
-    '<div class="rowbtns"><button type="button" class="btn" data-action="cycle-lite">' + esc(t(liteLabelKey())) + '</button></div></div>';
+    '<div class="liteseg">' +
+    '<button type="button" class="segbtn' + (lm === 'on' ? ' on' : '') + '" data-action="set-lite" data-lite="on">' + esc(t('liteOn')) + '</button>' +
+    '<button type="button" class="segbtn' + (lm === 'auto' ? ' on' : '') + '" data-action="set-lite" data-lite="auto">' + esc(t('liteAuto')) + '</button>' +
+    '<button type="button" class="segbtn' + (lm === 'off' ? ' on' : '') + '" data-action="set-lite" data-lite="off">' + esc(t('liteOff')) + '</button>' +
+    '</div></div>';
   h += '<div class="setrow"><h3>' + esc(t('editSetup')) + '</h3>' +
     '<div class="field"><label>' + esc(t('startBalance')) + ' (' + esc(t('kyat')) + ')</label>' +
     '<input id="editBal" type="number" inputmode="numeric" min="0" value="' + (state.setup.balance || '') + '"></div>' +
@@ -2646,13 +2655,15 @@ function handleClick(e){
       render();
       break;
     }
-    case 'cycle-lite': {
+    case 'set-lite': {
       if (!state.settings) state.settings = {};
-      var cur = state.settings.lite || 'auto';
-      state.settings.lite = cur === 'auto' ? 'on' : cur === 'on' ? 'off' : 'auto';
-      persist();
-      applyLiteMode();
-      render();
+      var nl = target.getAttribute('data-lite');
+      if (nl === 'on' || nl === 'off' || nl === 'auto'){
+        state.settings.lite = nl;
+        persist();
+        applyLiteMode();
+        render();
+      }
       break;
     }
     case 'reset-data': {
@@ -2971,7 +2982,7 @@ if (typeof module !== 'undefined' && module.exports){
     isJunk: isJunk, purgeJunk: purgeJunk,
     /* Lite mode (v1.1.7; refresh-aware threshold v1.1.8) */
     isLowEndDevice: isLowEndDevice, liteActive: liteActive,
-    applyLiteMode: applyLiteMode, sampleFps: sampleFps, liteLabelKey: liteLabelKey,
+    applyLiteMode: applyLiteMode, sampleFps: sampleFps,
     refreshRateFromIntervals: refreshRateFromIntervals, fpsNeedsLite: fpsNeedsLite,
     get fpsLite(){ return fpsLite; }, setFpsLite: function(v){ fpsLite = v; },
     get editingName(){ return editingName; },
