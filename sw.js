@@ -1,6 +1,6 @@
 /* Your Wallet (public) — offline service worker, cache-first.
    Bump CACHE when shipping a new version of the site. */
-var CACHE = 'your-wallet-v1.2.10';
+var CACHE = 'your-wallet-v1.2.11';
 var ASSETS = [
   './',
   './index.html',
